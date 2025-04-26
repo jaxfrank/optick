@@ -51,11 +51,11 @@ namespace Optick
 			VkQueue				queue;
 			VkQueryPool			queryPool;
 			VkCommandPool		commandPool;
-			VkEvent				event;
+			VkSemaphore         semaphore;
 
 			array<Frame, NUM_FRAMES_DELAY> frames;
 
-			NodePayload() : vulkanFunctions(), device(VK_NULL_HANDLE), physicalDevice(VK_NULL_HANDLE), queue(VK_NULL_HANDLE), queryPool(VK_NULL_HANDLE), commandPool(VK_NULL_HANDLE), event(VK_NULL_HANDLE) {}
+			NodePayload() : vulkanFunctions(), device(VK_NULL_HANDLE), physicalDevice(VK_NULL_HANDLE), queue(VK_NULL_HANDLE), queryPool(VK_NULL_HANDLE), commandPool(VK_NULL_HANDLE), semaphore(VK_NULL_HANDLE) {}
 			~NodePayload();
 		};
 		vector<NodePayload*> nodePayloads;
@@ -120,14 +120,10 @@ namespace Optick
 				vkGetPhysicalDeviceProperties,
 				(PFN_vkCreateQueryPool_)vkCreateQueryPool,
 				(PFN_vkCreateCommandPool_)vkCreateCommandPool,
-				(PFN_vkCreateEvent_)vkCreateEvent,
 				(PFN_vkAllocateCommandBuffers_)vkAllocateCommandBuffers,
 				(PFN_vkCreateFence_)vkCreateFence,
 				vkCmdResetQueryPool,
 				nullptr, // dynamically define vkResetQueryPool via VK_EXT_host_query_reset extension or Vulkan 1.2 hostQueryReset feature
-				(PFN_vkCmdWaitEvents_)vkCmdWaitEvents,
-				(PFN_vkResetEvent_)vkResetEvent,
-				(PFN_vkSetEvent_)vkSetEvent,
 				(PFN_vkQueueSubmit_)vkQueueSubmit,
 				(PFN_vkWaitForFences_)vkWaitForFences,
 				(PFN_vkResetCommandBuffer_)vkResetCommandBuffer,
@@ -138,7 +134,6 @@ namespace Optick
 				(PFN_vkResetFences_)vkResetFences,
 				vkDestroyCommandPool,
 				vkDestroyQueryPool,
-				vkDestroyEvent,
 				vkDestroyFence,
 				vkFreeCommandBuffers,
 				nullptr, // dynamically define vkGetPastPresentationTimingGOOGLE if VK_GOOGLE_display_timing extension available
@@ -178,10 +173,6 @@ namespace Optick
 		commandPoolCreateInfo.pNext = 0;
 		commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-		VkEventCreateInfo eventCreateInfo;
-		eventCreateInfo.sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO;
-		eventCreateInfo.pNext = 0;
-		eventCreateInfo.flags = 0;
 
 		nodes.resize(nodeCount);
 		nodePayloads.resize(nodeCount);
@@ -193,7 +184,6 @@ namespace Optick
 			{
 				vulkanFunctions.vkCreateQueryPool = (PFN_vkCreateQueryPool_)vkGetDeviceProcAddr_(devices[i], "vkCreateQueryPool");
 				vulkanFunctions.vkCreateCommandPool = (PFN_vkCreateCommandPool_)vkGetDeviceProcAddr_(devices[i], "vkCreateCommandPool");
-				vulkanFunctions.vkCreateEvent = (PFN_vkCreateEvent_)vkGetDeviceProcAddr_(devices[i], "vkCreateEvent");
 				vulkanFunctions.vkAllocateCommandBuffers = (PFN_vkAllocateCommandBuffers_)vkGetDeviceProcAddr_(devices[i], "vkAllocateCommandBuffers");
 				vulkanFunctions.vkCreateFence = (PFN_vkCreateFence_)vkGetDeviceProcAddr_(devices[i], "vkCreateFence");
 				vulkanFunctions.vkCmdResetQueryPool = (PFN_vkCmdResetQueryPool_)vkGetDeviceProcAddr_(devices[i], "vkCmdResetQueryPool");
@@ -201,9 +191,6 @@ namespace Optick
 				if (!vulkanFunctions.vkResetQueryPool) {	// if vkResetQueryPool not defined via Vulkan 1.2, try vkResetQueryPoolEXT
 					vulkanFunctions.vkResetQueryPool = (PFN_vkResetQueryPool_)vkGetDeviceProcAddr_(devices[i], "vkResetQueryPoolEXT");
 				}
-				vulkanFunctions.vkCmdWaitEvents = (PFN_vkCmdWaitEvents_)vkGetDeviceProcAddr_(devices[i], "vkCmdWaitEvents");
-				vulkanFunctions.vkResetEvent = (PFN_vkResetEvent_)vkGetDeviceProcAddr_(devices[i], "vkResetEvent");
-				vulkanFunctions.vkSetEvent = (PFN_vkSetEvent_)vkGetDeviceProcAddr_(devices[i], "vkSetEvent");
 				vulkanFunctions.vkQueueSubmit = (PFN_vkQueueSubmit_)vkGetDeviceProcAddr_(devices[i], "vkQueueSubmit");
 				vulkanFunctions.vkWaitForFences = (PFN_vkWaitForFences_)vkGetDeviceProcAddr_(devices[i], "vkWaitForFences");
 				vulkanFunctions.vkResetCommandBuffer = (PFN_vkResetCommandBuffer_)vkGetDeviceProcAddr_(devices[i], "vkResetCommandBuffer");
@@ -214,7 +201,6 @@ namespace Optick
 				vulkanFunctions.vkResetFences = (PFN_vkResetFences_)vkGetDeviceProcAddr_(devices[i], "vkResetFences");
 				vulkanFunctions.vkDestroyCommandPool = (PFN_vkDestroyCommandPool_)vkGetDeviceProcAddr_(devices[i], "vkDestroyCommandPool");
 				vulkanFunctions.vkDestroyQueryPool = (PFN_vkDestroyQueryPool_)vkGetDeviceProcAddr_(devices[i], "vkDestroyQueryPool");
-				vulkanFunctions.vkDestroyEvent = (PFN_vkDestroyEvent_)vkGetDeviceProcAddr_(devices[i], "vkDestroyEvent");
 				vulkanFunctions.vkDestroyFence = (PFN_vkDestroyFence_)vkGetDeviceProcAddr_(devices[i], "vkDestroyFence");
 				vulkanFunctions.vkFreeCommandBuffers = (PFN_vkFreeCommandBuffers_)vkGetDeviceProcAddr_(devices[i], "vkFreeCommandBuffers");
 				vulkanFunctions.vkGetPastPresentationTimingGOOGLE = (PFN_vkGetPastPresentationTimingGOOGLE_)vkGetDeviceProcAddr_(devices[i], "vkGetPastPresentationTimingGOOGLE");
@@ -263,7 +249,14 @@ namespace Optick
 			OPTICK_ASSERT(r == VK_SUCCESS, "Failed");
 			(void)r;
 
-			r = (VkResult)(*vulkanFunctions.vkCreateEvent)(nodePayload->device, &eventCreateInfo, 0, &nodePayload->event);
+			VkSemaphoreTypeCreateInfo semaphoreType{ VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+			semaphoreType.initialValue = 0;
+			semaphoreType.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+	
+			VkSemaphoreCreateInfo semaphoreCreateInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+			semaphoreCreateInfo.pNext = &semaphoreType;
+
+			r = (VkResult)(*vulkanFunctions.vkCreateSemaphore)(nodePayload->device, &semaphoreCreateInfo, nullptr, &nodePayload->semaphore);
 			OPTICK_ASSERT(r == VK_SUCCESS, "Failed");
 			(void)r;
 
@@ -501,16 +494,6 @@ namespace Optick
 		VkDevice Device = payload.device;
 		VkFence Fence = currentFrame.fence;
 
-		VkSemaphoreTypeCreateInfo semaphore_type{ VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
-		semaphore_type.initialValue = 0;
-		semaphore_type.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-
-		VkSemaphoreCreateInfo create_info{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-		create_info.pNext = &semaphore_type;
-
-		VkSemaphore semaphore{ nullptr };
-		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkCreateSemaphore)(Device, &create_info, nullptr, &semaphore));
-
 		// SRS - Prepare and submit an empty command buffer to wait on app buffer completion
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkWaitForFences)(Device, 1, &Fence, 1, (uint64_t)-1));
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkResetFences)(Device, 1, &Fence));
@@ -532,8 +515,7 @@ namespace Optick
 		// SRS - Prepare and submit the actual command buffer used for clock synchronization
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkWaitForFences)(Device, 1, &Fence, 1, (uint64_t)-1));
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkResetFences)(Device, 1, &Fence));
-		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkResetEvent)(Device, payload.event));
-		
+
 		const uint64_t wait_value = 1;
 		VkTimelineSemaphoreSubmitInfo timeline_info{ VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
 		timeline_info.waitSemaphoreValueCount = 1;
@@ -543,11 +525,11 @@ namespace Optick
 
 		submitInfo.pNext = &timeline_info;
 		submitInfo.waitSemaphoreCount = 1;
-		submitInfo.pWaitSemaphores = &semaphore;
+		submitInfo.pWaitSemaphores = &payload.semaphore;
 		submitInfo.pWaitDstStageMask = &dst_stage_mask;
 		
 		VkSemaphoreSignalInfo signal_info{ VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO };
-		signal_info.semaphore = semaphore;
+		signal_info.semaphore = payload.semaphore;
 		signal_info.value = wait_value;
 
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkBeginCommandBuffer)(CB, &commandBufferBeginInfo));
@@ -579,14 +561,12 @@ namespace Optick
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkEndCommandBuffer)(CB));
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkQueueSubmit)(payload.queue, 1, &submitInfo, Fence));
 		
-		(*payload.vulkanFunctions.vkDestroySemaphore)(Device, semaphore, nullptr);
-
 		return clock;
 	}
 
 	GPUProfilerVulkan::NodePayload::~NodePayload()
 	{
-		(*vulkanFunctions.vkDestroyEvent)(device, event, nullptr);
+		(*vulkanFunctions.vkDestroySemaphore)(device, semaphore, nullptr);
 		(*vulkanFunctions.vkDestroyCommandPool)(device, commandPool, nullptr);
 		(*vulkanFunctions.vkDestroyQueryPool)(device, queryPool, nullptr);
 	}
