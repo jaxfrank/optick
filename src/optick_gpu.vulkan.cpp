@@ -142,6 +142,9 @@ namespace Optick
 				vkDestroyFence,
 				vkFreeCommandBuffers,
 				nullptr, // dynamically define vkGetPastPresentationTimingGOOGLE if VK_GOOGLE_display_timing extension available
+				vkCreateSemaphore,
+				vkDestroySemaphore,
+				vkSignalSemaphore,
 			};
 #else
 			OPTICK_FAILED("Either set OPTICK_STATIC_VULKAN_FUNCTIONS = 1 or VulkanFunctions must be defined! Can't initialize GPU Profiler!");
@@ -215,6 +218,10 @@ namespace Optick
 				vulkanFunctions.vkDestroyFence = (PFN_vkDestroyFence_)vkGetDeviceProcAddr_(devices[i], "vkDestroyFence");
 				vulkanFunctions.vkFreeCommandBuffers = (PFN_vkFreeCommandBuffers_)vkGetDeviceProcAddr_(devices[i], "vkFreeCommandBuffers");
 				vulkanFunctions.vkGetPastPresentationTimingGOOGLE = (PFN_vkGetPastPresentationTimingGOOGLE_)vkGetDeviceProcAddr_(devices[i], "vkGetPastPresentationTimingGOOGLE");
+				vulkanFunctions.vkCreateSemaphore = (PFN_vkCreateSemaphore_)vkGetDeviceProcAddr_(devices[i], "vkCreateSemaphore");
+				vulkanFunctions.vkDestroySemaphore = (PFN_vkDestroySemaphore_)vkGetDeviceProcAddr_(devices[i], "vkDestroySemaphore");
+				vulkanFunctions.vkSignalSemaphore = (PFN_vkSignalSemaphore_)vkGetDeviceProcAddr_(devices[i], "vkSignalSemaphore");
+
 			}
 #if OPTICK_STATIC_VULKAN_FUNCTIONS
 			else	// this condition can also run if vulkanFunctions are manually-defined via the "functions" parameter and vulkanFunctions.vkGetInstanceProcAddr == nullptr
@@ -484,7 +491,7 @@ namespace Optick
 
 		NodePayload& payload = *nodePayloads[nodeIndex];
 		Frame& currentFrame = payload.frames[frameNumber % NUM_FRAMES_DELAY];
-		
+
 		VkCommandBufferBeginInfo commandBufferBeginInfo;
 		commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		commandBufferBeginInfo.pNext = 0;
@@ -494,12 +501,22 @@ namespace Optick
 		VkDevice Device = payload.device;
 		VkFence Fence = currentFrame.fence;
 
+		VkSemaphoreTypeCreateInfo semaphore_type{ VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+		semaphore_type.initialValue = 0;
+		semaphore_type.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+
+		VkSemaphoreCreateInfo create_info{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+		create_info.pNext = &semaphore_type;
+
+		VkSemaphore semaphore{ nullptr };
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkCreateSemaphore)(Device, &create_info, nullptr, &semaphore));
+
 		// SRS - Prepare and submit an empty command buffer to wait on app buffer completion
-		(*payload.vulkanFunctions.vkWaitForFences)(Device, 1, &Fence, 1, (uint64_t)-1);
-		(*payload.vulkanFunctions.vkResetFences)(Device, 1, &Fence);
-		(*payload.vulkanFunctions.vkResetCommandBuffer)(CB, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
-		(*payload.vulkanFunctions.vkBeginCommandBuffer)(CB, &commandBufferBeginInfo);
-		(*payload.vulkanFunctions.vkEndCommandBuffer)(CB);
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkWaitForFences)(Device, 1, &Fence, 1, (uint64_t)-1));
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkResetFences)(Device, 1, &Fence));
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkResetCommandBuffer)(CB, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT));
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkBeginCommandBuffer)(CB, &commandBufferBeginInfo));
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkEndCommandBuffer)(CB));
 
 		VkSubmitInfo submitInfo = {};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -511,26 +528,44 @@ namespace Optick
 		submitInfo.signalSemaphoreCount = 0;
 		submitInfo.pSignalSemaphores = nullptr;
 		(*payload.vulkanFunctions.vkQueueSubmit)(payload.queue, 1, &submitInfo, Fence);
-
+		
 		// SRS - Prepare and submit the actual command buffer used for clock synchronization
-		(*payload.vulkanFunctions.vkWaitForFences)(Device, 1, &Fence, 1, (uint64_t)-1);
-		(*payload.vulkanFunctions.vkResetFences)(Device, 1, &Fence);
-		(*payload.vulkanFunctions.vkResetEvent)(Device, payload.event);
-		(*payload.vulkanFunctions.vkBeginCommandBuffer)(CB, &commandBufferBeginInfo);
-		(*payload.vulkanFunctions.vkCmdResetQueryPool)(CB, payload.queryPool, 0, 1);
-		(*payload.vulkanFunctions.vkCmdWaitEvents)(CB, 1, &payload.event, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, nullptr, 0, nullptr, 0, nullptr);
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkWaitForFences)(Device, 1, &Fence, 1, (uint64_t)-1));
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkResetFences)(Device, 1, &Fence));
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkResetEvent)(Device, payload.event));
+		
+		const uint64_t wait_value = 1;
+		VkTimelineSemaphoreSubmitInfo timeline_info{ VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
+		timeline_info.waitSemaphoreValueCount = 1;
+		timeline_info.pWaitSemaphoreValues = &wait_value;
+		
+		VkPipelineStageFlags dst_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+		submitInfo.pNext = &timeline_info;
+		submitInfo.waitSemaphoreCount = 1;
+		submitInfo.pWaitSemaphores = &semaphore;
+		submitInfo.pWaitDstStageMask = &dst_stage_mask;
+		
+		VkSemaphoreSignalInfo signal_info{ VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO };
+		signal_info.semaphore = semaphore;
+		signal_info.value = wait_value;
+
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkBeginCommandBuffer)(CB, &commandBufferBeginInfo));
 		(*payload.vulkanFunctions.vkCmdWriteTimestamp)(CB, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, payload.queryPool, 0);
-		(*payload.vulkanFunctions.vkEndCommandBuffer)(CB);
-		(*payload.vulkanFunctions.vkQueueSubmit)(payload.queue, 1, &submitInfo, Fence);
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkEndCommandBuffer)(CB));
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkQueueSubmit)(payload.queue, 1, &submitInfo, Fence));
 
 		// SRS - Improve GPU to CPU clock offset calibration by using Vulkan events
 		// thanks to cdwfs for concept at https://gist.github.com/cdwfs/4222ca09cb259f8dd50f7f2cf7d09179
-		(*payload.vulkanFunctions.vkSetEvent)(Device, payload.event);
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkSignalSemaphore)(Device, &signal_info));
 		clock.timestampCPU = GetHighPrecisionTime();
-		(*payload.vulkanFunctions.vkWaitForFences)(Device, 1, &Fence, 1, (uint64_t)-1);
-		(*payload.vulkanFunctions.vkResetFences)(Device, 1, &Fence);
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkWaitForFences)(Device, 1, &Fence, 1, (uint64_t)-1));
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkResetFences)(Device, 1, &Fence));
 		clock.timestampGPU = 0;
-		(*payload.vulkanFunctions.vkGetQueryPoolResults)(Device, payload.queryPool, 0, 1, 8, &clock.timestampGPU, 8, VK_QUERY_RESULT_64_BIT);
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkGetQueryPoolResults)(Device, payload.queryPool, 0, 1, 8, &clock.timestampGPU, 8, VK_QUERY_RESULT_64_BIT));
+
+		submitInfo.waitSemaphoreCount = 0;
+		submitInfo.pWaitSemaphores = nullptr;
 
 		// SRS - Improve GPU to CPU clock frequency scaling by using floating point doubles
 		clock.frequencyCPU = GetHighPrecisionFrequency();
@@ -539,10 +574,12 @@ namespace Optick
 		clock.frequencyGPU = (int64_t)(1000000000.0 / (double)Properties.limits.timestampPeriod);
 
 		// SRS - Reset entire query pool to clear clock sync query + any leftover queries from previous run
-		(*payload.vulkanFunctions.vkBeginCommandBuffer)(CB, &commandBufferBeginInfo);
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkBeginCommandBuffer)(CB, &commandBufferBeginInfo));
 		(*payload.vulkanFunctions.vkCmdResetQueryPool)(CB, payload.queryPool, 0, MAX_QUERIES_COUNT);
-		(*payload.vulkanFunctions.vkEndCommandBuffer)(CB);
-		(*payload.vulkanFunctions.vkQueueSubmit)(payload.queue, 1, &submitInfo, Fence);
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkEndCommandBuffer)(CB));
+		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkQueueSubmit)(payload.queue, 1, &submitInfo, Fence));
+		
+		(*payload.vulkanFunctions.vkDestroySemaphore)(Device, semaphore, nullptr);
 
 		return clock;
 	}

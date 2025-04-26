@@ -105,6 +105,7 @@ OPTICK_DEFINE_HANDLE(VkQueryPool);
 OPTICK_DEFINE_HANDLE(VkCommandPool);
 OPTICK_DEFINE_HANDLE(VkFence);
 OPTICK_DEFINE_HANDLE(VkEvent);
+OPTICK_DEFINE_HANDLE(VkSemaphore);
 
 struct VkPhysicalDeviceProperties;
 struct VkQueryPoolCreateInfo;
@@ -115,6 +116,8 @@ struct VkCommandBufferAllocateInfo;
 struct VkFenceCreateInfo;
 struct VkSubmitInfo;
 struct VkCommandBufferBeginInfo;
+struct VkSemaphoreCreateInfo;
+struct VkSemaphoreSignalInfo;
 
 #ifndef VKAPI_PTR
 #define OPTICK_VKAPI_PTR_DEFINED 1
@@ -152,6 +155,9 @@ typedef void (VKAPI_PTR *PFN_vkDestroyEvent_)(VkDevice device, VkEvent event, co
 typedef void (VKAPI_PTR *PFN_vkDestroyFence_)(VkDevice device, VkFence fence, const VkAllocationCallbacks* pAllocator);
 typedef void (VKAPI_PTR *PFN_vkFreeCommandBuffers_)(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer* pCommandBuffers);
 typedef int32_t (VKAPI_PTR *PFN_vkGetPastPresentationTimingGOOGLE_)(VkDevice device, void* swapchain, uint32_t* pPresentationTimingCount, void* pPresentationTimings);
+typedef int32_t (VKAPI_PTR *PFN_vkCreateSemaphore_)(VkDevice device, const VkSemaphoreCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSemaphore* pSemaphore);
+typedef void (VKAPI_PTR *PFN_vkDestroySemaphore_)(VkDevice device, VkSemaphore semaphore, const VkAllocationCallbacks* pAllocator);
+typedef int32_t (VKAPI_PTR* PFN_vkSignalSemaphore_)(VkDevice device, const VkSemaphoreSignalInfo* pSignalInfo);
 
 #if OPTICK_VKAPI_PTR_DEFINED
 #undef VKAPI_PTR
@@ -193,6 +199,9 @@ namespace Optick
 		PFN_vkDestroyFence_ vkDestroyFence;
 		PFN_vkFreeCommandBuffers_ vkFreeCommandBuffers;
 		PFN_vkGetPastPresentationTimingGOOGLE_ vkGetPastPresentationTimingGOOGLE;
+		PFN_vkCreateSemaphore_ vkCreateSemaphore;
+		PFN_vkDestroySemaphore_ vkDestroySemaphore;
+		PFN_vkSignalSemaphore_ vkSignalSemaphore;
 	};
 
 	// Source: http://msdn.microsoft.com/en-us/library/system.windows.media.colors(v=vs.110).aspx
