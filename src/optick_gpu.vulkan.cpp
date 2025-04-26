@@ -38,24 +38,25 @@ namespace Optick
 	protected:
 		struct Frame
 		{
-			VkCommandBuffer commandBuffer;
-			VkFence fence;
-			Frame() : commandBuffer(VK_NULL_HANDLE), fence(VK_NULL_HANDLE) {}
+			VkCommandBuffer commandBuffer{ VK_NULL_HANDLE };
+			VkFence fence{ VK_NULL_HANDLE };
+			Frame() = default;
 		};
 
 		struct NodePayload
 		{
-			VulkanFunctions		vulkanFunctions;
-			VkDevice			device;
-			VkPhysicalDevice	physicalDevice;
-			VkQueue				queue;
-			VkQueryPool			queryPool;
-			VkCommandPool		commandPool;
-			VkSemaphore         semaphore;
+			VulkanFunctions		vulkanFunctions{};
+			VkDevice			device{ VK_NULL_HANDLE };
+			VkPhysicalDevice	physicalDevice{ VK_NULL_HANDLE };
+			VkQueue				queue{ VK_NULL_HANDLE };
+			VkQueryPool			queryPool{ VK_NULL_HANDLE };
+			VkCommandPool		commandPool{ VK_NULL_HANDLE };
+			VkSemaphore         semaphore{ VK_NULL_HANDLE };
+			uint64_t            semaphore_value{0};
 
-			array<Frame, NUM_FRAMES_DELAY> frames;
+			array<Frame, NUM_FRAMES_DELAY> frames{};
 
-			NodePayload() : vulkanFunctions(), device(VK_NULL_HANDLE), physicalDevice(VK_NULL_HANDLE), queue(VK_NULL_HANDLE), queryPool(VK_NULL_HANDLE), commandPool(VK_NULL_HANDLE), semaphore(VK_NULL_HANDLE) {}
+			NodePayload() = default;
 			~NodePayload();
 		};
 		vector<NodePayload*> nodePayloads;
@@ -516,10 +517,10 @@ namespace Optick
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkWaitForFences)(Device, 1, &Fence, 1, (uint64_t)-1));
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkResetFences)(Device, 1, &Fence));
 
-		const uint64_t wait_value = 1;
+		payload.semaphore_value++;
 		VkTimelineSemaphoreSubmitInfo timeline_info{ VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
 		timeline_info.waitSemaphoreValueCount = 1;
-		timeline_info.pWaitSemaphoreValues = &wait_value;
+		timeline_info.pWaitSemaphoreValues = &payload.semaphore_value;
 		
 		VkPipelineStageFlags dst_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 
@@ -530,7 +531,7 @@ namespace Optick
 		
 		VkSemaphoreSignalInfo signal_info{ VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO };
 		signal_info.semaphore = payload.semaphore;
-		signal_info.value = wait_value;
+		signal_info.value = payload.semaphore_value;
 
 		OPTICK_VK_CHECK((VkResult)(*payload.vulkanFunctions.vkBeginCommandBuffer)(CB, &commandBufferBeginInfo));
 		(*payload.vulkanFunctions.vkCmdWriteTimestamp)(CB, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, payload.queryPool, 0);
